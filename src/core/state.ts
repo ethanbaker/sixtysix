@@ -2,6 +2,7 @@
 
 import { cardId, cardsEqual, RANK_POINTS, type Card, type Deal, type DeckType, type Suit } from "./deck";
 import {
+  canDeclareCall,
   canExchangeLowestTrump,
   getAvailableMarriages,
   getGameOutcome,
@@ -65,6 +66,7 @@ export interface GameState {
 
   // State info
   readonly currentTrick: readonly PlayedCard[];
+  readonly trickHistory: readonly PlayedCard[][];
   readonly leadingPlayer: PlayerId;
   readonly currentPlayer: PlayerId;
   readonly activeCall: {
@@ -90,6 +92,7 @@ export function createInitialState(deal: Deal, nonDealer: PlayerId, options: Gam
     trumpCard: deal.trumpCard,
     stock: deal.stock,
     currentTrick: [],
+    trickHistory: [],
     leadingPlayer: nonDealer,
     currentPlayer: nonDealer,
     points: [0, 0],
@@ -106,7 +109,7 @@ export function createInitialState(deal: Deal, nonDealer: PlayerId, options: Gam
 export function makeCall(state: GameState, player: PlayerId, call: Call): GameState {
   if (isHandOver(state)) throw new Error("Cannot make a call; the hand is already over");
   if (player !== state.currentPlayer || player !== state.leadingPlayer) throw new Error(`Player ${player} cannot make call if not on lead`);
-  if (isClosedPhase(state)) throw new Error("Cannot close the stock; already in closed phase");
+  if (!canDeclareCall(state, player, call)) throw new Error("Cannot make call");
 
   return { ...state, activeCall: { callType: call, callingPlayer: player } };
 }
@@ -143,6 +146,9 @@ export function playCard(state: GameState, player: PlayerId, card: Card): GameSt
   const follow: PlayedCard = { player, card };
   const result = isTrickWinner(lead.card, follow.card, state.trumpSuit);
 
+  const trickHistory = [...state.trickHistory];
+  trickHistory.push([lead, follow]);
+
   const winner = result === "lead" ? lead.player : follow.player;
 
   const trickPoints = RANK_POINTS[lead.card.rank] + RANK_POINTS[follow.card.rank];
@@ -175,6 +181,7 @@ export function playCard(state: GameState, player: PlayerId, card: Card): GameSt
     ...state,
     hands: newHands,
     currentTrick: [],
+    trickHistory,
     leadingPlayer: winner,
     currentPlayer: winner,
     points: newPoints,
@@ -187,7 +194,7 @@ export function playCard(state: GameState, player: PlayerId, card: Card): GameSt
   const handsEmptied = state.hands[0].length === 0 && state.hands[1].length === 0;
   if (handsEmptied && state.activeCall === null) {
     const finalPoints: [number, number] = [nextState.points[0], nextState.points[1]];
-    finalPoints[winner] += 10;
+    finalPoints[winner] += state.options.lastStockPointBonus;
     nextState = { ...nextState, points: finalPoints };
   }
 
@@ -225,7 +232,7 @@ export function declareMarriage(state: GameState, player: PlayerId, card: Card):
     throw new Error(`Player ${player} cannot declare a marriage as they are not leading`);
 
   const eligibleLeads = getAvailableMarriages(state, player);
-  if (!eligibleLeads.includes(card)) throw new Error(`Player ${player} cannot declare a marriage with ${card}`);
+  if (!eligibleLeads.some((c) => cardsEqual(c, card))) throw new Error(`Player ${player} cannot declare a marriage with ${card}`);
 
   // Play the specified marriage card
   const newState = playCard(state, player, card);

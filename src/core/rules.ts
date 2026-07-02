@@ -1,7 +1,7 @@
 // Legal move validator and trick resolution
 
 import { cardsEqual, RANK_ORDER, type Card, type Suit } from "./deck";
-import { otherPlayer, type GameState, type PlayerId } from "./state";
+import { otherPlayer, type GameState, type PlayedCard, type PlayerId } from "./state";
 
 // Return true if the game is in the closed phase
 //  - Game was ended early by a big/small/66 call
@@ -45,7 +45,7 @@ export function isHandOver(state: GameState): boolean {
 export function canDrawCard(state: GameState, player: PlayerId): boolean {
   if (isClosedPhase(state)) return false;
   if (state.stock.length === 0 && state.trumpCard === null) return false;
-  return state.hands[player].length !== 5;
+  return state.hands[player].length === 5;
 }
 
 /** Move rules */
@@ -115,9 +115,23 @@ export function canExchangeLowestTrump(state: GameState, player: PlayerId): bool
 /** Declarations/calls */
 
 export type Call = "big" | "small" | "sixtysix" | "close-stock";
+const CALLS: Call[] = ["big", "small", "sixtysix", "close-stock"];
+
+// Calls the user can make according to game options
+export function getCalls(state: GameState, player: PlayerId): Call[] {
+  let availableCalls: Call[] = [];
+
+  for (const c of CALLS) {
+    if (canDeclareCall(state, player, c)) {
+      availableCalls.push(c);
+    }
+  }
+
+  return availableCalls;
+}
 
 // Whether or not the player can "declare" a call
-export function canDeclareCall(state: GameState, player: PlayerId, call: Call) {
+export function canDeclareCall(state: GameState, player: PlayerId, call: Call): boolean {
   switch (call) {
     // Whether or not the player can declare at the beginning of the round
     //  - Player's turn
@@ -224,7 +238,7 @@ export function getGameOutcome(state: GameState): HandOutcome {
     case "sixtysix":
     case "close-stock":
       // Score as normal if player who called sixty six got 66
-      if (state.points[declarer] >= 66) {
+      if (getGamePoints(state, declarer) >= 66) {
         return { winner: declarer, matchPoints: baseMatchPoints(opponentPoints, opponentTricks) };
       }
 
@@ -233,9 +247,9 @@ export function getGameOutcome(state: GameState): HandOutcome {
 
     case "big":
     case "small":
-      // TODO:
-      return { winner: declarer, matchPoints: 0 };
-      break;
+      return state.trickHistory.every(bigSmallValidator(call.callType, declarer))
+        ? { winner: declarer, matchPoints: call.callType === "big" ? 3 : 2 }
+        : { winner: opponent, matchPoints: 1 };
 
     default:
       throw new Error(`Unhandled call type: ${call.callType}`);
@@ -247,4 +261,16 @@ function baseMatchPoints(opponentCardPoints: number, opponentTricksWon: number):
   if (opponentCardPoints >= 33) return 1;
   if (opponentTricksWon >= 1) return 2;
   return 3;
+}
+
+// Helper function to validate big calls
+function bigSmallValidator(
+  call: "big" | "small",
+  declarer: PlayerId,
+): (trick: PlayedCard[], index: number, array: readonly PlayedCard[][]) => boolean {
+  return call === "big"
+    ? (trick, _, __) =>
+        RANK_ORDER[trick.find((c) => c.player === declarer)!.card.rank] > RANK_ORDER[trick.find((c) => c.player !== declarer)!.card.rank]
+    : (trick, _, __) =>
+        RANK_ORDER[trick.find((c) => c.player === declarer)!.card.rank] < RANK_ORDER[trick.find((c) => c.player !== declarer)!.card.rank];
 }

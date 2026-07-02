@@ -16,6 +16,7 @@ export const ROMANIAN_DECK: DeckType = {
 /** Game options */
 
 export const STANDARD_GAME_OPTIONS: GameOptions = {
+  deckType: STANDARD_DECK,
   pendingMarriages: true,
   trickRequirementForTrumpSwap: 1,
   lastStockPointBonus: 10,
@@ -25,6 +26,7 @@ export const STANDARD_GAME_OPTIONS: GameOptions = {
 };
 
 export const ROMANIAN_GAME_OPTIONS: GameOptions = {
+  deckType: ROMANIAN_DECK,
   pendingMarriages: false,
   trickRequirementForTrumpSwap: 1,
   lastStockPointBonus: 0,
