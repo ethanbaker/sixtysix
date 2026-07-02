@@ -1,0 +1,26 @@
+:root {
+  /* This app only has a light theme designed/tested. "light dark" let the
+     browser apply its dark-mode UA defaults (near-black body background,
+     light default text color) on systems with dark mode on, even though
+     none of our own CSS accounts for that -- explicit colors set
+     elsewhere (e.g. button text) then clash with that automatic dark
+     background instead of the light one they were designed against. */
+  color-scheme: light;
+  font: 16px/1.4 system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #fff;
+  color: #1a1a1a;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+}
