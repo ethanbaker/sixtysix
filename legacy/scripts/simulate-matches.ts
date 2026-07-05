@@ -14,12 +14,8 @@
 //   --samples       override AiConfig.samples for both AI seats (default: preset)
 //   --seed          base RNG seed (default: derived from current time)
 
-import { createRng } from "../src/core/deck";
-import type { Rng } from "../src/core/deck";
-import { createAiPlayer } from "../src/ai/player";
-import type { AiConfig, Difficulty } from "../src/ai/player";
-import { createMatch, simulateMatch } from "../src/game/match";
-import type { PlayerId } from "../src/core/state";
+import { createAiPlayer } from "../../src/ai/player";
+import type { PlayerId } from "../../src/core/state";
 
 function parseArgs(argv: readonly string[]): Map<string, string> {
   const args = new Map<string, string>();
@@ -57,7 +53,7 @@ function main(): void {
 
   console.log(
     `Simulating ${matchCount} matches: seat A = ${difficultyA}` +
-      `${configOverride.depth ?? configOverride.samples ? ` (${JSON.stringify(configOverride)})` : ""} ` +
+      `${(configOverride.depth ?? configOverride.samples) ? ` (${JSON.stringify(configOverride)})` : ""} ` +
       `vs seat B = ${difficultyB}, seed=${seed}`,
   );
 

@@ -8,8 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "vitest run",
-    "simulate": "tsx scripts/simulate-matches.ts"
+    "test": "vitest run"
   },
   "dependencies": {
     "react": "^19.2.7",

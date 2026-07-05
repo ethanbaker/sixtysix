@@ -22,5 +22,5 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["tests", "src/core", "src/ai", "src/game", "scripts", "vitest.config.ts"]
+  "include": ["tests", "src/core", "src/ai", "src/game", "vitest.config.ts"]
 }
