@@ -1,5 +1,5 @@
 {
   "files": [],
   "references": [{ "path": "./tsconfig.app.json" }, { "path": "./tsconfig.node.json" }],
-  "exclude": ["legacy", "node_modules"]
+  "exclude": ["node_modules"]
 }
