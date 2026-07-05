@@ -1,9 +1,13 @@
 // Heuristic evaluation function for sixty-six. Scores a GameState from one player's perspective
 
-import type { Rank, Card, Suit } from "../core/deck";
-import { getAvailableMarriages, getMarriagePoints } from "../core/rules";
+import { RANK_ORDER, type Rank, type Card, type Suit } from "../core/deck";
+import { getAvailableMarriages, getMarriagePoints, isBigSmallCallBroken } from "../core/rules";
 import type { GameState, PlayerId } from "../core/state";
 import { otherPlayer } from "../core/state";
+
+// Highest possible gap between two RANK_ORDER values (A=5 vs 9=0), used to
+// normalize the worst-pairing margin in bigSmallCallScore.
+const MAX_RANK_GAP = 5;
 
 // Tunable weights. Keep every coefficient named here so later tuning
 // (or AI difficulty variants) doesn't have to hunt for magic numbers
@@ -37,7 +41,15 @@ export const WEIGHTS = {
   // Penalty (scaled by shortfall) for closing while still short of 66 —
   // closing is a one-way door, so this is deliberately steep; it's what
   // keeps Easy from closing proactively per Section 4.5's behavior table.
-  closeRiskPenalty: -60,
+  closeRiskPenalty: -80,
+
+  // Scales the confidence signal (-1..1) for an active big/small call —
+  // see bigSmallCallScore. Large, since once such a call is active it's
+  // effectively the whole game (a correct/incorrect big/small call is
+  // worth 1-3 match points outright, same order of magnitude as reaching
+  // or missing 66), and a shallow search won't play the hand out far
+  // enough to see the true win/lose terminal itself.
+  bigSmallCallConfidence: 40,
 } as const;
 
 // A correct/incorrect declare-66 (or a manual-close failure resolving at
@@ -99,11 +111,15 @@ function proximityScore(state: GameState, player: PlayerId): number {
   return Math.min(likelyReachableTotal(state, player), SIXTY_SIX) / SIXTY_SIX;
 }
 
-// Only scores the *closing* decision itself (rewarding/penalizing having
-// just closed the stock); irrelevant once the opponent is the closer, or
-// nobody has closed.
+// Only scores the *closing*/*declaring-66* decision itself (rewarding/
+// penalizing having just closed the stock or declared 66 while safely at
+// 66+); irrelevant once the opponent made the call, nobody has, or the
+// active call is a big/small (whose win condition isn't about reaching
+// 66 at all -- see bigSmallCallScore).
 function closeStockSafetyScore(state: GameState, player: PlayerId): number {
-  if (state.activeCall !== null && state.activeCall.callingPlayer !== player) return 0;
+  const call = state.activeCall;
+  if (call === null || call.callingPlayer !== player) return 0;
+  if (call.callType !== "close-stock" && call.callType !== "sixtysix") return 0;
 
   const total = likelyReachableTotal(state, player);
   if (total >= SIXTY_SIX) {
@@ -112,6 +128,50 @@ function closeStockSafetyScore(state: GameState, player: PlayerId): number {
 
   const shortfall = (SIXTY_SIX - total) / SIXTY_SIX;
   return WEIGHTS.closeRiskPenalty * shortfall;
+}
+
+// Proxy for how a "big"/"small" call is likely to resolve. A big/small call
+// requires the caller to beat the opponent's card in *every* remaining
+// trick (bigSmallValidator checks state.trickHistory.every(...)), so this
+// is an all-or-nothing bet, not a majority vote -- one bad pairing sinks
+// the whole call. Confidence is therefore driven by the *worst* pairing
+// (in the best-case sorted matchup), not the average across pairings.
+function bigSmallCallScore(state: GameState, player: PlayerId): number {
+  const call = state.activeCall;
+  if (call === null || (call.callType !== "big" && call.callType !== "small")) return 0;
+
+  const caller = call.callingPlayer;
+  const opponent = otherPlayer(caller);
+
+  // A past trick already violated the call -- the outcome is locked in
+  // regardless of what's left in hand, so don't let the remaining-cards
+  // heuristic below paper over an already-lost call.
+  if (isBigSmallCallBroken(state)) {
+    return caller === player ? -TERMINAL_GAME_POINT_VALUE : TERMINAL_GAME_POINT_VALUE;
+  }
+
+  const callerRanks = state.hands[caller].map((c) => RANK_ORDER[c.rank]).sort((a, b) => b - a);
+  const opponentRanks = state.hands[opponent].map((c) => RANK_ORDER[c.rank]).sort((a, b) => b - a);
+
+  const cards = Math.min(callerRanks.length, opponentRanks.length);
+  if (cards === 0) return 0;
+
+  // Margin at each best-case paired position; positive means that pairing
+  // favors the caller. The worst (minimum) margin across all pairings
+  // determines whether a clean sweep is even reachable from here.
+  let worstMargin = Infinity;
+  for (let i = 0; i < cards; i++) {
+    const margin = call.callType === "big" ? callerRanks[i] - opponentRanks[i] : opponentRanks[i] - callerRanks[i];
+    worstMargin = Math.min(worstMargin, margin);
+  }
+
+  // -1 (worst pairing is a loss/tie by the full possible gap) .. 1 (every
+  // pairing favors the caller by the maximum possible gap). worstMargin <= 0
+  // means at least one pairing isn't strictly favorable, which already
+  // rules out a clean sweep in the best case, so it maps to <= 0 confidence.
+  const confidence = Math.max(-1, Math.min(1, worstMargin / MAX_RANK_GAP));
+  const magnitude = WEIGHTS.bigSmallCallConfidence * confidence;
+  return caller === player ? magnitude : -magnitude;
 }
 
 // Evaluate the game state based on provided weights and calculation methods
@@ -123,6 +183,11 @@ export function evaluate(state: GameState, player: PlayerId): number {
     if (outcome.winner === player) return TERMINAL_GAME_POINT_VALUE * outcome.matchPoints;
     if (outcome.winner === opponent) return -TERMINAL_GAME_POINT_VALUE * outcome.matchPoints;
     return 0;
+  }
+
+  // If in big or small call, evaluation score changes
+  if (state.activeCall !== null && (state.activeCall.callType === "big" || state.activeCall.callType === "small")) {
+    return bigSmallCallScore(state, player);
   }
 
   let score = 0;

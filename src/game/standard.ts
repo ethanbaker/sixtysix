@@ -6,7 +6,7 @@
 
 import { createDeck, deal, shuffleDeck, type Card } from "../core/deck";
 import type { Rng } from "../core/rng";
-import { canDeclareCall, canDrawCard, canExchangeLowestTrump, getGameOutcome, type Call } from "../core/rules";
+import { canDeclareCall, canDrawCard, canExchangeLowestTrump, canPassOpeningCall, canPlayCard, getGameOutcome, type Call } from "../core/rules";
 import {
   applyHandResult,
   checkGameEnd,
@@ -17,6 +17,7 @@ import {
   exchangeTrump,
   makeCall,
   otherPlayer,
+  passOpeningCall,
   playCard,
   type GameState,
   type MatchState,
@@ -51,7 +52,8 @@ export type StandardAction =
   | { readonly type: "play"; readonly card: Card }
   | { readonly type: "marriage"; readonly card: Card }
   | { readonly type: "exchange-trump" }
-  | { readonly type: "call"; readonly call: Call };
+  | { readonly type: "call"; readonly call: Call }
+  | { readonly type: "pass-opening-call" };
 
 // Calls that resolve the hand immediately, rather than only changing how
 // future tricks are played (as "close-stock" does)
@@ -76,10 +78,23 @@ export function applyStandardAction(state: GameState, player: PlayerId, action: 
     }
 
     case "marriage":
+      if (!canPlayCard(state, player)) {
+        throw new Error(`Player ${player} cannot play a card right now`);
+      }
       return declareMarriage(state, player, action.card);
 
     case "play":
+      if (!canPlayCard(state, player)) {
+        throw new Error(`Player ${player} cannot play a card right now`);
+      }
       return resolveTrickAndDraw(state, playCard(state, player, action.card));
+
+    case "pass-opening-call": {
+      if (!canPassOpeningCall(state, player)) {
+        throw new Error(`Player ${player} cannot pass the opening call right now`);
+      }
+      return passOpeningCall(state, player);
+    }
 
     default: {
       const exhaustive: never = action;

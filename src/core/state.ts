@@ -4,10 +4,12 @@ import { cardId, cardsEqual, RANK_POINTS, type Card, type Deal, type DeckType, t
 import {
   canDeclareCall,
   canExchangeLowestTrump,
+  canPassOpeningCall,
   getAvailableMarriages,
   getGameOutcome,
-  getLegalMoves,
+  getLegalCardMoves,
   getMarriagePoints,
+  isBigSmallCall,
   isClosedPhase,
   isHandOver,
   isTrickWinner,
@@ -67,8 +69,10 @@ export interface GameState {
   // State info
   readonly currentTrick: readonly PlayedCard[];
   readonly trickHistory: readonly PlayedCard[][];
+  readonly gameHistory: string[];
   readonly leadingPlayer: PlayerId;
   readonly currentPlayer: PlayerId;
+  readonly openingCall: boolean;
   readonly activeCall: {
     callingPlayer: PlayerId;
     callType: Call;
@@ -93,6 +97,7 @@ export function createInitialState(deal: Deal, nonDealer: PlayerId, options: Gam
     stock: deal.stock,
     currentTrick: [],
     trickHistory: [],
+    gameHistory: [],
     leadingPlayer: nonDealer,
     currentPlayer: nonDealer,
     points: [0, 0],
@@ -101,6 +106,7 @@ export function createInitialState(deal: Deal, nonDealer: PlayerId, options: Gam
     bankedMarriagePoints: [0, 0],
     activeCall: null,
     handOutcome: null,
+    openingCall: true,
   };
 }
 
@@ -108,17 +114,33 @@ export function createInitialState(deal: Deal, nonDealer: PlayerId, options: Gam
 
 export function makeCall(state: GameState, player: PlayerId, call: Call): GameState {
   if (isHandOver(state)) throw new Error("Cannot make a call; the hand is already over");
-  if (player !== state.currentPlayer || player !== state.leadingPlayer) throw new Error(`Player ${player} cannot make call if not on lead`);
   if (!canDeclareCall(state, player, call)) throw new Error("Cannot make call");
 
-  return { ...state, activeCall: { callType: call, callingPlayer: player } };
+  const gameHistory = [...state.gameHistory];
+  gameHistory.push(`Player ${player}: call-${call}`);
+
+  return { ...state, activeCall: { callType: call, callingPlayer: player }, openingCall: false, gameHistory, leadingPlayer: player };
+}
+
+// Have a player decline to make an opening call (big/small/close-stock),
+// before any card has been played this hand. If the first player (the
+// leader) passes, the other player gets a turn to call or pass; if the
+// second player passes too, the window closes and normal play begins.
+export function passOpeningCall(state: GameState, player: PlayerId): GameState {
+  if (isHandOver(state)) throw new Error("Cannot pass; the hand is already over");
+  if (!canPassOpeningCall(state, player)) throw new Error(`Player ${player} cannot pass the opening call right now`);
+
+  const gameHistory = [...state.gameHistory];
+  gameHistory.push(`Player ${player}: pass-opening-call`);
+
+  return { ...state, openingCall: state.leadingPlayer === player, currentPlayer: otherPlayer(player), gameHistory };
 }
 
 export function playCard(state: GameState, player: PlayerId, card: Card): GameState {
   if (isHandOver(state)) throw new Error("Cannot play a card; hand is already over");
   if (player !== state.currentPlayer) throw new Error(`It is not player ${player}'s turn`);
 
-  const moves = getLegalMoves(state, player);
+  const moves = getLegalCardMoves(state, player);
   if (!moves.some((c) => cardsEqual(c, card))) {
     throw new Error(`Player ${player} cannot legally play ${cardId(card)} right now`);
   }
@@ -130,24 +152,42 @@ export function playCard(state: GameState, player: PlayerId, card: Card): GameSt
   const newHands: [Card[], Card[]] = [[...state.hands[0]], [...state.hands[1]]];
   newHands[player] = [...hand.slice(0, cardIndex), ...hand.slice(cardIndex + 1)];
 
+  const gameHistory = [...state.gameHistory];
+  gameHistory.push(`Player ${player}: ${cardId(card)}`);
+
   if (state.currentTrick.length === 0) {
-    // If this leads the trick, set initial card and wait for the follower
     return {
       ...state,
       hands: newHands,
       currentTrick: [{ player, card }],
       leadingPlayer: player,
       currentPlayer: otherPlayer(player),
+      openingCall: false,
+      gameHistory,
     };
   }
 
-  // Otherwise, we need to resolve the trick
+  // Resolve the trick
   const lead = state.currentTrick[0];
   const follow: PlayedCard = { player, card };
   const result = isTrickWinner(lead.card, follow.card, state.trumpSuit);
 
   const trickHistory = [...state.trickHistory];
   trickHistory.push([lead, follow]);
+
+  // Just play next card if in big small, no need to resolve trick
+  if (isBigSmallCall(state)) {
+    return {
+      ...state,
+      hands: newHands,
+      currentTrick: [],
+      leadingPlayer: player,
+      currentPlayer: otherPlayer(player),
+      openingCall: false,
+      trickHistory,
+      gameHistory,
+    };
+  }
 
   const winner = result === "lead" ? lead.player : follow.player;
 
@@ -188,6 +228,7 @@ export function playCard(state: GameState, player: PlayerId, card: Card): GameSt
     tricksWon: newTricksWon,
     pendingMarriagePoints,
     bankedMarriagePoints,
+    gameHistory,
   };
 
   // If this was the last trick and wasn't ended early, give the set bonus
@@ -234,6 +275,9 @@ export function declareMarriage(state: GameState, player: PlayerId, card: Card):
   const eligibleLeads = getAvailableMarriages(state, player);
   if (!eligibleLeads.some((c) => cardsEqual(c, card))) throw new Error(`Player ${player} cannot declare a marriage with ${card}`);
 
+  const gameHistory = [...state.gameHistory];
+  gameHistory.push(`Player ${player}: marriage-${cardId(card)}`);
+
   // Play the specified marriage card
   const newState = playCard(state, player, card);
 
@@ -252,6 +296,7 @@ export function declareMarriage(state: GameState, player: PlayerId, card: Card):
     ...newState,
     pendingMarriagePoints,
     bankedMarriagePoints,
+    gameHistory,
   };
 }
 
@@ -261,6 +306,9 @@ export function exchangeTrump(state: GameState, player: PlayerId): GameState {
 
   const faceUpTrump = state.trumpCard;
   if (faceUpTrump === null) throw new Error("No face-up trump card available to exchange for");
+
+  const gameHistory = [...state.gameHistory];
+  gameHistory.push(`Player ${player}: exchange-lowest-trump`);
 
   const hand = state.hands[player];
   const lowestTrumpIndex = hand.findIndex((c) => cardsEqual(c, { suit: state.trumpSuit, rank: state.options.deckType.ranks[0] }));
@@ -273,6 +321,7 @@ export function exchangeTrump(state: GameState, player: PlayerId): GameState {
     ...state,
     hands: newHands,
     trumpCard: lowestTrump,
+    gameHistory,
   };
 }
 

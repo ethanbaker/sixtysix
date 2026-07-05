@@ -8,6 +8,9 @@ interface ActionPanelProps {
   onExchangeTrumpNine: () => void;
   onCloseStock: () => void;
   onDeclareSixtySix: () => void;
+  onCallBig: () => void;
+  onCallSmall: () => void;
+  onPassOpeningCall: () => void;
 }
 
 const SUIT_SYMBOLS: Record<Suit, string> = {
@@ -22,11 +25,29 @@ const SUIT_SYMBOLS: Record<Suit, string> = {
 // disable/hide rather than let a click error out. Declaring a marriage
 // lets the player choose which of the King or Queen to lead, since that
 // choice is real strategy (which card is safer to expose to the trick).
-export function ActionPanel({ actions, onDeclareMarriage, onExchangeTrumpNine, onCloseStock, onDeclareSixtySix }: ActionPanelProps) {
+export function ActionPanel({
+  actions,
+  onDeclareMarriage,
+  onExchangeTrumpNine,
+  onCloseStock,
+  onDeclareSixtySix,
+  onCallBig,
+  onCallSmall,
+  onPassOpeningCall,
+}: ActionPanelProps) {
   const canClose = actions.calls.includes("close-stock");
   const canDeclareSixtySix = actions.calls.includes("sixtysix");
+  const canCallBig = actions.calls.includes("big");
+  const canCallSmall = actions.calls.includes("small");
 
-  const hasAnyAction = actions.marriageCards.length > 0 || actions.canExchangeTrump || canClose || canDeclareSixtySix;
+  const hasAnyAction =
+    actions.marriageCards.length > 0 ||
+    actions.canExchangeTrump ||
+    canClose ||
+    canDeclareSixtySix ||
+    canCallBig ||
+    canCallSmall ||
+    actions.canPassOpeningCall;
   if (!hasAnyAction) return null;
 
   return (
@@ -41,6 +62,16 @@ export function ActionPanel({ actions, onDeclareMarriage, onExchangeTrumpNine, o
           Trump exchange
         </button>
       )}
+      {canCallBig && (
+        <button type="button" onClick={onCallBig}>
+          Call Big
+        </button>
+      )}
+      {canCallSmall && (
+        <button type="button" onClick={onCallSmall}>
+          Call Small
+        </button>
+      )}
       {canClose && (
         <button type="button" onClick={onCloseStock}>
           Close stock
@@ -49,6 +80,11 @@ export function ActionPanel({ actions, onDeclareMarriage, onExchangeTrumpNine, o
       {canDeclareSixtySix && (
         <button type="button" onClick={onDeclareSixtySix}>
           Declare 66
+        </button>
+      )}
+      {actions.canPassOpeningCall && (
+        <button type="button" onClick={onPassOpeningCall}>
+          Pass
         </button>
       )}
     </div>

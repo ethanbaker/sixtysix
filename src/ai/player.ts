@@ -66,6 +66,9 @@ interface Decision {
 // the first about which action to take).
 function decide(ai: AiPlayer, state: GameState): Decision {
   if (isHandOver(state)) throw new Error("Cannot choose an action; the hand is already over");
+  // Usually the player whose turn it is to play a card, but during the
+  // opening call window (before the first card of the hand) it may
+  // instead be the other player's turn to call or pass.
   if (state.currentPlayer !== ai.player) throw new Error(`It is not player ${ai.player}'s turn`);
 
   return ai.difficulty === "easy" ? decideGreedy(state, ai.player) : decideWithSearch(state, ai.player, ai.rng, ai.difficulty);

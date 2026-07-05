@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Card } from "../../core/deck";
 import { createRng, type Rng } from "../../core/rng";
-import { canExchangeLowestTrump, getAvailableMarriages, getCalls, getLegalMoves, type Call } from "../../core/rules";
+import { canExchangeLowestTrump, canPassOpeningCall, getAvailableMarriages, getCalls, getLegalCardMoves, type Call } from "../../core/rules";
 import type { GameState, PlayerId } from "../../core/state";
 import {
   advanceMatch,
@@ -42,18 +42,22 @@ export interface LegalActions {
   readonly marriageCards: readonly Card[];
   readonly canExchangeTrump: boolean;
   readonly calls: readonly Call[];
+  // Whether the player may decline to make an opening call (big/small/
+  // close-stock) right now and just proceed to normal play instead.
+  readonly canPassOpeningCall: boolean;
 }
 
-const NO_ACTIONS: LegalActions = { cards: [], marriageCards: [], canExchangeTrump: false, calls: [] };
+const NO_ACTIONS: LegalActions = { cards: [], marriageCards: [], canExchangeTrump: false, calls: [], canPassOpeningCall: false };
 
 export function getLegalActions(hand: GameState, player: PlayerId): LegalActions {
   if (isHandFinished(hand) || hand.currentPlayer !== player) return NO_ACTIONS;
 
   return {
-    cards: getLegalMoves(hand, player),
+    cards: getLegalCardMoves(hand, player),
     marriageCards: getAvailableMarriages(hand, player),
     canExchangeTrump: canExchangeLowestTrump(hand, player),
     calls: getCalls(hand, player),
+    canPassOpeningCall: canPassOpeningCall(hand, player),
   };
 }
 
@@ -75,9 +79,10 @@ function createRandomRng(): Rng {
 }
 
 function buildAiPlayers(seats: readonly [SeatConfig, SeatConfig]): [AiPlayer | null, AiPlayer | null] {
-  return seats.map((seat, index) =>
-    seat.type === "ai" ? createAiPlayer(index as PlayerId, seat.difficulty, createRandomRng()) : null,
-  ) as [AiPlayer | null, AiPlayer | null];
+  return seats.map((seat, index) => (seat.type === "ai" ? createAiPlayer(index as PlayerId, seat.difficulty, createRandomRng()) : null)) as [
+    AiPlayer | null,
+    AiPlayer | null,
+  ];
 }
 
 // Drives `aiPlayer`'s entire turn. Most actions (closing the stock, the
@@ -239,13 +244,13 @@ export function useMatch() {
   );
 
   const playCard = useCallback((player: PlayerId, card: Card) => dispatchAction(player, { type: "play", card }), [dispatchAction]);
-  const declareMarriage = useCallback(
-    (player: PlayerId, card: Card) => dispatchAction(player, { type: "marriage", card }),
-    [dispatchAction],
-  );
+  const declareMarriage = useCallback((player: PlayerId, card: Card) => dispatchAction(player, { type: "marriage", card }), [dispatchAction]);
   const exchangeTrumpNine = useCallback((player: PlayerId) => dispatchAction(player, { type: "exchange-trump" }), [dispatchAction]);
   const closeStock = useCallback((player: PlayerId) => dispatchAction(player, { type: "call", call: "close-stock" }), [dispatchAction]);
   const declareSixtySix = useCallback((player: PlayerId) => dispatchAction(player, { type: "call", call: "sixtysix" }), [dispatchAction]);
+  const callBig = useCallback((player: PlayerId) => dispatchAction(player, { type: "call", call: "big" }), [dispatchAction]);
+  const callSmall = useCallback((player: PlayerId) => dispatchAction(player, { type: "call", call: "small" }), [dispatchAction]);
+  const passOpeningCallAction = useCallback((player: PlayerId) => dispatchAction(player, { type: "pass-opening-call" }), [dispatchAction]);
 
   const nextHand = useCallback(() => {
     setSession((current) => advanceMatch(current, createRandomRng()));
@@ -312,6 +317,9 @@ export function useMatch() {
     exchangeTrumpNine,
     closeStock,
     declareSixtySix,
+    callBig,
+    callSmall,
+    passOpeningCallAction,
     nextHand,
     returnToSetup,
   };

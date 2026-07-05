@@ -10,7 +10,9 @@ interface StockInfoProps {
 function statusLabel(hand: GameState, closed: boolean): string {
   const call = hand.activeCall;
   if (call !== null) {
-    return call.callType === "close-stock" ? `Closed by Player ${call.callingPlayer + 1}` : `Player ${call.callingPlayer + 1} declared 66`;
+    return call.callType === "close-stock"
+      ? `Closed by Player ${call.callingPlayer + 1}`
+      : `Player ${call.callingPlayer + 1} declared ${call.callType}`;
   }
   return closed ? "Exhausted" : "Open";
 }

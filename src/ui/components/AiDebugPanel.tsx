@@ -41,6 +41,8 @@ function describeAction(action: StandardAction): string {
       return "Trump exchange";
     case "call":
       return CALL_LABELS[action.call];
+    case "pass-opening-call":
+      return "Pass";
   }
 }
 

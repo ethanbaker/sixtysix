@@ -20,7 +20,7 @@ export const STANDARD_GAME_OPTIONS: GameOptions = {
   pendingMarriages: true,
   trickRequirementForTrumpSwap: 1,
   lastStockPointBonus: 10,
-  allowBeginningCalls: false,
+  allowBeginningCalls: true,
   allowSixtySixCalls: true,
   allowClosingStock: true,
 };

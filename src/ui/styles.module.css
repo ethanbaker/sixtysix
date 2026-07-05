@@ -147,6 +147,17 @@
   color: #222;
 }
 
+.cardFaceDown {
+  background: repeating-linear-gradient(45deg, #2a5298, #2a5298 6px, #1e3c72 6px, #1e3c72 12px);
+  cursor: default;
+}
+
+.cardFaceDown:not(:disabled):hover {
+  transform: none;
+  box-shadow: none;
+  border-color: #999;
+}
+
 .actions {
   display: flex;
   flex-wrap: wrap;

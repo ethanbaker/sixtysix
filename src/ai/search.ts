@@ -1,6 +1,6 @@
 // Minimax with alpha-beta pruning over a single, fully determined GameState
 
-import { canExchangeLowestTrump, getAvailableMarriages, getCalls, getLegalMoves, isHandOver, type Call } from "../core/rules";
+import { canExchangeLowestTrump, canPassOpeningCall, getAvailableMarriages, getCalls, getLegalCardMoves, isHandOver, type Call } from "../core/rules";
 import type { GameState, PlayerId } from "../core/state";
 import { applyStandardAction, type StandardAction } from "../game/standard";
 import { evaluate } from "./evaluate";
@@ -14,21 +14,27 @@ export interface ActionCandidate {
 export function legalActionCandidates(state: GameState, player: PlayerId): ActionCandidate[] {
   const actions: StandardAction[] = [];
 
-  for (const card of getLegalMoves(state, player)) {
-    actions.push({ type: "play", card });
-  }
+  if (!state.openingCall) {
+    for (const card of getLegalCardMoves(state, player)) {
+      actions.push({ type: "play", card });
+    }
 
-  for (const card of getAvailableMarriages(state, player)) {
-    actions.push({ type: "marriage", card });
-  }
+    for (const card of getAvailableMarriages(state, player)) {
+      actions.push({ type: "marriage", card });
+    }
 
-  if (canExchangeLowestTrump(state, player)) {
-    actions.push({ type: "exchange-trump" });
+    if (canExchangeLowestTrump(state, player)) {
+      actions.push({ type: "exchange-trump" });
+    }
   }
 
   const availableCalls: Call[] = getCalls(state, player);
   for (const call of availableCalls) {
     actions.push({ type: "call", call });
+  }
+
+  if (canPassOpeningCall(state, player)) {
+    actions.push({ type: "pass-opening-call" });
   }
 
   return actions.map((action) => ({ action, resultState: applyStandardAction(state, player, action) }));
@@ -46,23 +52,24 @@ export function actionKey(action: StandardAction): string {
       return "exchange-trump";
     case "call":
       return `call:${action.call}`;
+    case "pass-opening-call":
+      return "pass-opening-call";
   }
 }
 
 // Perform minimax on a current game state with provided depth, alpha, and beta
-// Each minimax iteration is dependent on a turn (when state.currentPlayer changes),
-// as players can perform more than one action in a single turn
+// Each minimax iteration is dependent on a turn (when the acting player
+// changes), as players can perform more than one action in a single turn
 export function minimax(state: GameState, rootPlayer: PlayerId, depth: number, alpha: number, beta: number): number {
   if (isHandOver(state) || depth <= 0) {
     return evaluate(state, rootPlayer);
   }
 
-  // Get maximizing player
-  const actingPlayer = state.currentPlayer;
-  const maximizing = actingPlayer === rootPlayer;
+  const activePlayer = state.currentPlayer;
+  const maximizing = activePlayer === rootPlayer;
 
   // Find legal actions
-  const candidates = legalActionCandidates(state, actingPlayer);
+  const candidates = legalActionCandidates(state, activePlayer);
   if (candidates.length === 0) {
     return evaluate(state, rootPlayer);
   }
@@ -71,7 +78,7 @@ export function minimax(state: GameState, rootPlayer: PlayerId, depth: number, a
     let value = -Infinity;
     for (const candidate of candidates) {
       // Perform maximizing action and evaluate against further turns
-      const nextDepth = candidate.resultState.currentPlayer === actingPlayer ? depth : depth - 1;
+      const nextDepth = candidate.resultState.currentPlayer === activePlayer ? depth : depth - 1;
       value = Math.max(value, minimax(candidate.resultState, rootPlayer, nextDepth, alpha, beta));
 
       // Break if alpha >= beta
@@ -84,7 +91,7 @@ export function minimax(state: GameState, rootPlayer: PlayerId, depth: number, a
   let value = Infinity;
   for (const candidate of candidates) {
     // Perform minimizing action and evaluate against further turns
-    const nextDepth = candidate.resultState.currentPlayer === actingPlayer ? depth : depth - 1;
+    const nextDepth = candidate.resultState.currentPlayer === activePlayer ? depth : depth - 1;
     value = Math.min(value, minimax(candidate.resultState, rootPlayer, nextDepth, alpha, beta));
 
     // Break if alpha >= beta
@@ -103,10 +110,12 @@ export interface ScoredAction {
 // Evaluated value for every root action using minimax
 export function evaluateRootActions(state: GameState, player: PlayerId, depth: number): ScoredAction[] {
   const candidates = legalActionCandidates(state, player);
-  return candidates.map(({ action, resultState }) => ({
-    action,
-    value: minimax(resultState, player, depth - 1, -Infinity, Infinity),
-  }));
+  return candidates.map(({ action, resultState }) => {
+    const value = minimax(resultState, player, depth - 1, -Infinity, Infinity);
+    //console.log(action, value);
+
+    return { action, value };
+  });
 }
 
 // Search for the best action of all root actions (higher = better)

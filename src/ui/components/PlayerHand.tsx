@@ -7,13 +7,14 @@ interface PlayerHandProps {
   cards: readonly Card[];
   legalCards: readonly Card[];
   onPlay: (card: Card) => void;
+  hidden?: boolean;
 }
 
 // Renders a hand face-up (local hands-across-the-table play — see
 // CLAUDE.md Section 6). Cards are only clickable when they're in
 // `legalCards`; everything else is shown but disabled rather than
 // letting a click fail.
-export function PlayerHand({ cards, legalCards, onPlay }: PlayerHandProps) {
+export function PlayerHand({ cards, legalCards, onPlay, hidden }: PlayerHandProps) {
   return (
     <div className={styles.handRow}>
       {cards.map((card) => {
@@ -24,6 +25,7 @@ export function PlayerHand({ cards, legalCards, onPlay }: PlayerHandProps) {
             card={card}
             disabled={!isLegal}
             onClick={isLegal ? () => onPlay(card) : undefined}
+            faceDown={hidden}
           />
         );
       })}

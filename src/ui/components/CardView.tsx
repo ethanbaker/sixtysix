@@ -16,22 +16,28 @@ interface CardButtonProps {
   onClick?: () => void;
   title?: string;
   animationClassName?: string;
+  faceDown?: boolean;
 }
 
 // A single playing card, rendered as a button so it's directly clickable
 // when it's a legal play; disabled (but still visible) otherwise.
-export function CardButton({ card, disabled, onClick, title, animationClassName }: CardButtonProps) {
+export function CardButton({ card, disabled, onClick, title, animationClassName, faceDown }: CardButtonProps) {
   const colorClass = RED_SUITS.has(card.suit) ? styles.cardRed : styles.cardBlack;
+  const faceDownClass = faceDown ? ` ${styles.cardFaceDown}` : "";
   return (
     <button
       type="button"
-      className={`${styles.card} ${colorClass}${animationClassName ? ` ${animationClassName}` : ""}`}
-      disabled={disabled ?? !onClick}
-      onClick={onClick}
-      title={title}
+      className={`${styles.card} ${colorClass}${faceDownClass}${animationClassName ? ` ${animationClassName}` : ""}`}
+      disabled={faceDown || (disabled ?? !onClick)}
+      onClick={faceDown ? undefined : onClick}
+      title={faceDown ? undefined : title}
     >
-      <span>{card.rank}</span>
-      <span>{SUIT_SYMBOLS[card.suit]}</span>
+      {!faceDown && (
+        <>
+          <span>{card.rank}</span>
+          <span>{SUIT_SYMBOLS[card.suit]}</span>
+        </>
+      )}
     </button>
   );
 }

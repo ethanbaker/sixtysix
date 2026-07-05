@@ -32,6 +32,9 @@ function App() {
     exchangeTrumpNine,
     closeStock,
     declareSixtySix,
+    callBig,
+    callSmall,
+    passOpeningCallAction,
     nextHand,
     returnToSetup,
   } = useMatch();
@@ -120,6 +123,9 @@ function App() {
   const handleExchange = () => exchangeTrumpNine(activePlayer);
   const handleClose = () => closeStock(activePlayer);
   const handleDeclareSixtySix = () => declareSixtySix(activePlayer);
+  const handleCallBig = () => callBig(activePlayer);
+  const handleCallSmall = () => callSmall(activePlayer);
+  const handlePassOpeningCall = () => passOpeningCallAction(activePlayer);
 
   const seatStatus = (player: 0 | 1): string => {
     const seat = seats[player];
@@ -134,7 +140,12 @@ function App() {
         {seatStatus(1)}
         {showTurnStatus && activePlayer === 1 ? (isAiSeat(1) ? " (thinking…)" : " (your turn)") : ""}
       </p>
-      <PlayerHand cards={hand.hands[1]} legalCards={activePlayer === 1 && legalActions ? legalActions.cards : []} onPlay={handlePlay} />
+      <PlayerHand
+        cards={hand.hands[1]}
+        legalCards={activePlayer === 1 && legalActions ? legalActions.cards : []}
+        onPlay={handlePlay}
+        hidden={isAiSeat(1) && !DEBUG_FLAG}
+      />
 
       <div className={styles.middleRow}>
         <StockInfo hand={hand} />
@@ -150,7 +161,12 @@ function App() {
         {seatStatus(0)}
         {showTurnStatus && activePlayer === 0 ? (isAiSeat(0) ? " (thinking…)" : " (your turn)") : ""}
       </p>
-      <PlayerHand cards={hand.hands[0]} legalCards={activePlayer === 0 && legalActions ? legalActions.cards : []} onPlay={handlePlay} />
+      <PlayerHand
+        cards={hand.hands[0]}
+        legalCards={activePlayer === 0 && legalActions ? legalActions.cards : []}
+        onPlay={handlePlay}
+        hidden={isAiSeat(0) && !DEBUG_FLAG}
+      />
 
       {legalActions && (
         <ActionPanel
@@ -159,6 +175,9 @@ function App() {
           onExchangeTrumpNine={handleExchange}
           onCloseStock={handleClose}
           onDeclareSixtySix={handleDeclareSixtySix}
+          onCallBig={handleCallBig}
+          onCallSmall={handleCallSmall}
+          onPassOpeningCall={handlePassOpeningCall}
         />
       )}
       {debugPanel}

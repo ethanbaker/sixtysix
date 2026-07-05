@@ -48,6 +48,11 @@ export function canDrawCard(state: GameState, player: PlayerId): boolean {
   return state.hands[player].length === 5;
 }
 
+// Players can play a card if not in the opening call phase
+export function canPlayCard(state: GameState, player: PlayerId): boolean {
+  return !state.openingCall && state.currentPlayer === player;
+}
+
 /** Move rules */
 
 // Return legal moves for a hand during the closed phase. A player must play:
@@ -55,7 +60,7 @@ export function canDrawCard(state: GameState, player: PlayerId): boolean {
 //  - Trump card on non-trump suit
 //  - Higher trump card on trump suit
 // If none of the criteria are met, the player can "play" anything but will lose the trick
-function getClosedPhaseMoves(hand: readonly Card[], ledCard: Card, trumpSuit: Suit): Card[] {
+function getClosedPhaseCardMoves(hand: readonly Card[], ledCard: Card, trumpSuit: Suit): Card[] {
   // Must play same suit
   const sameSuit = hand.filter((c) => c.suit === ledCard.suit);
   if (sameSuit.length > 0) {
@@ -75,13 +80,22 @@ function getClosedPhaseMoves(hand: readonly Card[], ledCard: Card, trumpSuit: Su
 }
 
 // Return legal moves the player can play right now
-export function getLegalMoves(state: GameState, player: PlayerId): Card[] {
+export function getLegalCardMoves(state: GameState, player: PlayerId): Card[] {
   const hand = state.hands[player];
+
+  // Can only make call or pass in beginning
+  if (state.openingCall) {
+    return [];
+  }
 
   // Can play anything if
   //  - Not in closed phase
   //  - Or leading player in closed phase
+  //  - Made big or small call
   if (!isClosedPhase(state)) {
+    return [...hand];
+  }
+  if (state.activeCall !== null && (state.activeCall.callType === "small" || state.activeCall.callType === "big")) {
     return [...hand];
   }
 
@@ -89,24 +103,28 @@ export function getLegalMoves(state: GameState, player: PlayerId): Card[] {
     return [...hand];
   }
 
+  if (state.currentTrick.length !== 1) {
+    console.log("bad state: ", state);
+  }
+
   const leadCard = state.currentTrick[0].card;
   if (!leadCard) {
     throw new Error("Trick missing card when lead player is set");
   }
-  return getClosedPhaseMoves(hand, leadCard, state.trumpSuit);
+  return getClosedPhaseCardMoves(hand, leadCard, state.trumpSuit);
 }
 
 /** Special rules (trump exchange) */
 
 // Whether or not a player can exchange for the lowest trump card under the stock
 //  - Player needs to be leading and on their turn
-//  - Cannot be in the closed phase
+//  - Cannot be in the closed phase or opening call
 //  - Player must have won one trick
 //  - Stock + trump card are empty
 //  - Player has the lowest trump card
 export function canExchangeLowestTrump(state: GameState, player: PlayerId): boolean {
   if (player !== state.leadingPlayer || player !== state.currentPlayer) return false;
-  if (isClosedPhase(state)) return false;
+  if (isClosedPhase(state) || state.openingCall) return false;
   if (state.tricksWon[player] < state.options.trickRequirementForTrumpSwap) return false;
   if (state.trumpCard === null) return false;
   return state.hands[player].some((c) => cardsEqual(c, { suit: state.trumpSuit, rank: state.options.deckType.ranks[0] }));
@@ -132,30 +150,60 @@ export function getCalls(state: GameState, player: PlayerId): Call[] {
 
 // Whether or not the player can "declare" a call
 export function canDeclareCall(state: GameState, player: PlayerId, call: Call): boolean {
+  if (state.activeCall !== null) return false;
+
   switch (call) {
     // Whether or not the player can declare at the beginning of the round
-    //  - Player's turn
-    //  - No trick has been played yet
+    //  - Player's turn in the opening call window (before any card is
+    //    played this hand) -- either the leader on their own turn, or
+    //    either player once the opening call window reaches them
     case "big":
     case "small":
       if (!state.options.allowBeginningCalls) return false;
-      return player === state.currentPlayer && state.tricksWon[0] + state.tricksWon[1] === 0;
+      return state.openingCall;
 
     // Whether or not the player can declare 66 during the game
     //  - Player's turn & player's leading
     case "sixtysix":
       if (!state.options.allowSixtySixCalls) return false;
-      return player === state.currentPlayer && player === state.leadingPlayer;
+      return player === state.currentPlayer && player === state.leadingPlayer && !state.openingCall;
 
     // Whether or not the player can declare the stock closed
-    //  - Player's turn && player's leading
+    //  - Player's turn && player's leading, OR it's their turn in the
+    //    opening call window (lets the non-leading player pre-emptively
+    //    close the stock before the first card of the hand is played)
     case "close-stock":
       if (!state.options.allowClosingStock) return false;
-      return player === state.currentPlayer && player === state.leadingPlayer;
+      return player === state.currentPlayer;
 
     default:
       throw new Error(`unrecognized call: ${call}`);
   }
+}
+
+// Return true if in big/small call
+export function isBigSmallCall(state: GameState): boolean {
+  return state.activeCall !== null && (state.activeCall.callType === "big" || state.activeCall.callType === "small");
+}
+
+// Return true if an active big/small call has already been broken by a
+// past trick. bigSmallValidator requires *every* trick to match, so a
+// single violation already guarantees the caller's loss regardless of how
+// the remaining tricks play out -- evaluation should treat this as the
+// settled outcome it is rather than re-scoring off the caller's remaining
+// cards, which would look overly optimistic again.
+export function isBigSmallCallBroken(state: GameState): boolean {
+  if (!isBigSmallCall(state)) return false;
+  const call = state.activeCall!;
+  const validator = bigSmallValidator(call.callType as "big" | "small", call.callingPlayer);
+  return !state.trickHistory.every(validator);
+}
+
+// Whether or not the player may decline to make an opening call
+// (big/small/close-stock) right now, handing the decision to the other
+// player (or, if they were the second to decide, letting normal play begin)
+export function canPassOpeningCall(state: GameState, player: PlayerId): boolean {
+  return !isHandOver(state) && state.currentPlayer === player && state.openingCall;
 }
 
 /** Marriages rules */
@@ -188,7 +236,7 @@ function hasMarriageForSuit(hand: readonly Card[], suit: Suit): boolean {
 //  - In closed phase
 export function getAvailableMarriages(state: GameState, player: PlayerId): Card[] {
   if (player !== state.leadingPlayer || player !== state.currentPlayer) return [];
-  if (isClosedPhase(state)) return [];
+  if (isClosedPhase(state) || state.openingCall) return [];
 
   const hand = state.hands[player];
   const marriageSuits = state.options.deckType.suits.filter((s) => hasMarriageForSuit(hand, s));
